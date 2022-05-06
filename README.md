@@ -1,34 +1,60 @@
-# Conda Environments and Jupyter Kernels
+# Managing project-specific application python environments
+
+## The goal
+Most research projects involving non-trivial computational efforts that use python code require careful management of the respective python environments throughout project lifecycles. Rapid changes in package dependencies, package version conflicts, deprecation of APIs (function calls) by individual projects, and obsoletion of system drivers and libraries make it virtually impossible to use an arbitrary set of packages or create all-encompassing environment that will serve everyone's needs over long periods of time. High velocity of changes in the popular ML/DL frameworks and packages and GPU computing exacerbate the problem.
+
+<img src="https://imgs.xkcd.com/comics/python_environment.png" alt="Python environment conundrum" width='200' align="right">
 
 ## The problem with `pip install`
 
-While `pip` is easy to use and works for many use cases, there are some major drawbacks. If you have spent any time working in Python, you will likely have seen (and may have run) suggestions to `pip install ____`, or within Jupyter `!pip install ____`, to install this package or that package. That will generally work...up to a point. There are a few issues with doing `pip install`:
+Most guides and project documentation for installing python packages recommend using 'pip install' for package installation. While `pip` is easy to use and works for many use cases, there are some major drawbacks. If you have spent any time working in Python, you will likely have seen (and may have run) suggestions to `pip install ____`, or within Jupyter `!pip install ____`, to install package(s). That will generally work on a local computer that is not shared and where downtime and environment breakage are expected. There are a few issues with doing `pip install` on a supercomputer like HiPerGator, though:
 
-1. If you install a version of a package that is also installed in by UFRC (either now or in the future), your version will take precedence. Your version appears in the the `PYTHON_PATH` before the UFRC installed version. That may be fine *now*, but some time down the road there may be a newer version installed by UFRC for compatibility with something else and your older version still takes precedence and breaks the other package. This can be hard to diagnose when things start failing as you have likely forgotten that you installed the package in the first place.
-1. You may want to install something that needs a different version of a package. Sometimes, the unfortunate reality is that two packages cannot co-exist because they require different versions of dependencies. This becomes a challenge to manage with `pip` as there isn't a method to swap active versions.
-1. On its own, `pip` installs **everything** in one locations: `~/.local/lib/python3.X/site-packages/`. All packages installed are in the same location for any given version of Python.
+* Pip by default installs binary packages (wheels), which are often build on systems incompatible with HiPerGator. If you pip install a package and attempt to import it you might see an error about missing symbols or GLIBC version.
+* Pip install of a package with no binary distribution (wheel) will attempt to build a package from source, but that build will likely fail without additional configuration.
+* If you pip install a package that is already installed or will be later installed in an environment provided by UFRC, your version will take precedence over the packages installed in an environment provided by an environment module (or jupyter kernel). Eventually package dependencies will become incompatible and you will encounter installation errors, import errors, missing or wrong function calls (API changes). An innocuous pip install of a single package can result in a drastic change of the environment rendering it unusable.
+* Different packages may require different versions of the same package as dependecies leading to impossible to reconsile installation scenarios. This becomes a challenge to manage with pip as there isn't a method to swap active versions.
+5. On its own, `pip` installs **everything** in one locations: `~/.local/lib/python3.X/site-packages/`. All packages installed are in the same location for any given version of Python.
 
 ## Conda and Mamba to the rescue!
 
 <img src='https://mamba.readthedocs.io/en/latest/_static/logo.png' alt='Mamba logo' width='200' align='right'>
 
-`conda` and the newer, faster, drop-in replacement `mamba`, were written to solve some of these issues. They allow you to have different environments and switch between environments as needed. They also make it much easier to report the exact configuration of modules that are needed to run some code, facilitating reproducibility.
+`conda` and the newer, faster, drop-in replacement `mamba`, were written to solve some of these issues. They represent a higher level of packaging abstraction that can combine compiled packages, applications, and libraries as well as pip-installed python packages. They also allow easier management of project-specific environments and switching between environments as needed. They also make it much easier to report the exact configuration of packages in an environment, facilitating reproducibility (recreation of an environment on a different system). Moreover, conda environments don't even have to be activated to be used. In most cases adding the path to the conda environment's 'bin' directory to the $PATH in the shell environment is sufficient for using them.
 
-Check out the [UFRC Help page on conda](https://help.rc.ufl.edu/doc/Conda)
+Check out the [UFRC Help page on conda](https://help.rc.ufl.edu/doc/Conda) for additional information.
 
 The rest of this tutorial will walk through setting up an environment and then a Jupyter kernel to use that environment in Jupyter Notebooks.
 
 ### A caveat
 
-`conda` and `mamba` pull packages from channels, or repositories, where a set of pre-packaged python packages are made available. While there are several available channels, like the main `conda-forge`, not every Python package is available via a `conda` channel. You may still need to use `pip` to install some things...as noted later, `conda` still helps manage the environment by installing packages *within the active environment* rather than everything in a single folder.
+`conda` and `mamba` get packages from channels, or repositories of prebuilt packages packages. While there are several available channels, like the main `conda-forge`, not every Python package is available from a `conda` channel as they have to be packaged for conda first. You may still need to use `pip` to install some packages as noted later. However, `conda` still helps manage environment by installing packages into separate directory trees rather than trying to install all packages into a single folder that pip does.
 
-## 1. Edit your `~/.condarc` file
+## 1. Conda Configuraion
 
-`conda`'s behavior is controlled by a file in your home directory called `.condarc`. The dot at the start of the name means that the file is hidden. If you have not run `conda` before, you won't have this file. Whether the file exists or not, the steps here will help you modify the file to work best on HiPerGator.
+### condarc configuration file
+`conda`'s behavior is controlled by a configuration file in your home directory called `.condarc`. The dot at the start of the name means that the file is hidden from 'ls' file listing command by default. If you have not run `conda` before, you won't have this file. Whether the file exists or not, the steps here will help you modify the file to work best on HiPerGator. First load of the 'conda' environment module on HiPerGator will put the current _best practice_ .condarc into your home directory.
 
-`conda` environments contain all of the packages installed within the environment as well as a Python version. They can quickly grow in size and, especially if you have many environments, fill the 40GB of space provided in your home directory (the environment we will create in this training is 5.3GB in size). As such, it is important to change the default and move the storage location from your home directory to your folder in `/blue/`.
+### conda package cache location
+`conda` caches (keeps a copy) of all downloaded packages by default in the ```~/.conda/pkgs``` directory tree. If you install a lot of packages you may end up filling up your home quota. You can change the default package cache path. To do so, add or change the pkgs_dirs setting in the ~/.condarc configuration file e.g.
+```pkgs_dirs:
+  - /blue/mygroup/share/pkgs
+```
+or
+```
+  - /blue/mygroup/$USER/pkgs
+```
+### conda environment location
+`conda` puts all packages installed in a particular environment into a single directory. By default _named_ conda environments are created in the ~/.conda/envs directory tree. They can quickly grow in size and, especially if you have many environments, fill the 40GB home directory quota. For example, the environment we will create in this training is 5.3GB in size. As such, it is important to use _path_ based (conda create -p PATH) conda environments, which allow you to use any path for a particular environment for example allowing you to keep a project-specific conda environment close to the project data in `/blue/` where you group has terrabyte(s) of space.
 
-To do so, edit or create your `~/.condarc` to use `/blue/group/user/conda/`, replacing `group` with your group name, and `user` with your username. **Note:** This file is in your home directory (`~/`) and hidden (starts with a dot).
+You can also change the default path for the _named_ environments (conda create -n NAME) if you prefer to keep all conda environments in the same directory tree. To do so, add or change the envs_dirs setting in the ~/.condarc configuration file e.g.
+```envs_dirs:
+  - /blue/mygroup/share/envs
+```
+or
+```
+  - /blue/mygroup/$USER/envs
+```
+ Replace `mygroup` with your actual group name.
 
 One way to do this is to type: 
 
@@ -63,7 +89,7 @@ Before we can run `conda` or `mamba` on HiPerGator, we need to load the `conda` 
 
 ### 2.2. Create your first environment
 
-To create your first environment, run the following command. In this example, I am creating an environment named `hfrl`:
+To create your first _name based_ conda environment, run the following command. In this example, I am creating an environment named `hfrl`:
 
 `mamba create -n hfrl`
 
@@ -73,17 +99,26 @@ Here's a screenshot of the output from running that command. Yours should look s
 
 > **Note:** You do not need to manually create the folders that you setup in step 1. `mamba` will take care of that for you.
 
+To create a _path based_ conda environment use the '-p PATH' argument:
+`mamba create -p PATH`
+e.g.
+`mamba create -p /blue/mygroup/share/project42/conda`
+
 ## 3. Activate the new environment
 
 To activate our environment (whether created with `mamba` or `conda` we use the `conda activate env_name` command. Let's activate our new environment:
 
 `conda activate hfrl`
+or
+`conda activate /blue/mygroup/share/project42/conda`
 
 Notice that your command prompt changes when you activate an environment to indicate which environment is active, showing that in parentheses before the other information:
 
 > `(hfrl) [magitz@c0907a-s23 magitz]$ ` 
 
-## 4. Add stuff to our environment with `mamba install`
+> **Note:** _path based_ environment activation is really only needed for package installation. For using the envronment just add the path to its 'bin' directory to $PATH in your job script.
+
+## 4. Install packages into our environment with `mamba install`
 
 Now we are ready to start adding things to our environment.
 
